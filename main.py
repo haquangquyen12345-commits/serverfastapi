@@ -5,7 +5,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from datetime import datetime
 
 # =====================================================================
-# 1. CẤU HÌNH KẾT NỐI POSTGRESQL (Mở cửa nhà kho)
+# 1. CẤU HÌNH KẾT NỐI POSTGRESQL 
 # =====================================================================
 # Cấu trúc: postgresql://[user]:[password]@[host]:[port]/[database_name]
 DATABASE_URL = "postgresql://postgres:hqqbg1234@127.0.0.1:5432/duaniot"
@@ -17,7 +17,7 @@ Base = declarative_base()
 # =====================================================================
 # 2. ĐỊNH NGHĨA BẢNG TRONG DATABASE (SQLAlchemy Model)
 # =====================================================================
-# Đây là cách chúng ta thiết kế các cột trong cuốn sổ cái
+# thiết kế các cột trong cuốn sổ cái
 class SensorRecord(Base):
     __tablename__ = "sensor_data" # Tên bảng
     
@@ -26,15 +26,12 @@ class SensorRecord(Base):
     button = Column(Integer, nullable=False)           # Cột trạng thái nút
     timestamp = Column(DateTime, default=datetime.now) # Cột thời gian
 
-# Lệnh này sẽ tự động chạy vào PostgreSQL và tạo cái bảng trên nếu nó chưa tồn tại
+# tự động chạy vào PostgreSQL và tạo cái bảng trên nếu nó chưa tồn tại
 Base.metadata.create_all(bind=engine)
-
-# =====================================================================
 # 3. KHỞI TẠO FASTAPI VÀ CẤU TRÚC JSON
-# =====================================================================
 app = FastAPI(title="IOT Server - PostgreSQL")
 
-# Đây là định dạng gói hàng mà ESP32 bắt buộc phải tuân thủ khi gửi lên
+# định dạng gói hàng mà ESP32 bắt buộc phải tuân thủ khi gửi lên
 class SensorData(BaseModel):
     lux: float
     button: int
@@ -47,9 +44,7 @@ def get_db():
     finally:
         db.close()
 
-# =====================================================================
 # 4. MỞ CỔNG ĐÓN DỮ LIỆU (API Endpoint)
-# =====================================================================
 @app.post("/api/data")
 async def receive_data(data: SensorData, db: Session = Depends(get_db)):
     # Bóc gói hàng JSON và chuyển thành một dòng dữ liệu (Record) chuẩn bị lưu
@@ -64,7 +59,7 @@ async def receive_data(data: SensorData, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(new_record)
     
-    # In ra Terminal để kỹ sư dễ theo dõi
+    # In ra Terminal để theo dõi
     print("=" * 40)
     print(f" ĐÃ LƯU VÀO DATABASE THÀNH CÔNG:")
     print(f" -> Độ rọi  : {data.lux} Lux")
@@ -72,4 +67,4 @@ async def receive_data(data: SensorData, db: Session = Depends(get_db)):
     print(f" -> ID bản ghi: {new_record.id}")
     print("=" * 40)
     
-    return {"status": "success", "message": "Đã lưu vào PostgreSQL!"}
+    return {"status": "success", "message": "Đã lưu vào PostgreSQL"}
