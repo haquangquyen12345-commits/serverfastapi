@@ -152,13 +152,19 @@
 
             if (data.length === 0) return;
 
-            // Lấy bản ghi mới nhất (Server trả về desc nên data[0] là mới nhất)
-            const latest = data[0];
+            // 1. SỬA LỖI Ở ĐÂY: Vì Python đã đảo ngược list, phần tử mới nhất nằm ở CUỐI mảng
+            const latest = data[data.length - 1]; 
             const lux = latest.lux;
             const time = latest.timestamp;
 
+            // 2. THÊM CHỐT CHẶN: Nếu thời gian không có gì mới so với lần trước thì bỏ qua, không in thêm ra bảng
+            if (history.length > 0 && history[history.length - 1].time === time) {
+                return; // Dừng hàm lại tại đây
+            }
+
             // 1. Connection UI
             document.getElementById('connectionStatus').className = "badge bg-success p-2";
+            // ... (GIỮ NGUYÊN TOÀN BỘ PHẦN CODE BÊN DƯỚI CỦA TÀI TỪ ĐOẠN NÀY TRỞ ĐI) ...
             document.getElementById('connectionStatus').innerText = "Kết nối SQL: OK";
 
             // 2. Cập nhật thẻ Lux & Cảnh báo
