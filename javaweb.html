@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HUST IoT Dashboard - Simulation Mode</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', sans-serif; }
+        .card { border: none; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); transition: 0.3s; }
+        .card:hover { transform: translateY(-3px); }
+        .stat-card { border-left: 5px solid #0d6efd; }
+        /* Bảng nhật ký có thanh cuộn */
+        .log-container { max-height: 350px; overflow-y: auto; border-radius: 8px; background: white; }
+        .table thead { position: sticky; top: 0; background-color: #f8f9fa; z-index: 1; }
+        /* Đèn LED ảo */
+        .led-indicator { width: 25px; height: 25px; border-radius: 50%; background-color: #bbb; display: inline-block; transition: 0.3s; }
+        .led-on { background-color: #2ecc71; box-shadow: 0 0 15px #2ecc71; }
+        .led-off { background-color: #e74c3c; box-shadow: 0 0 15px #e74c3c; }
+    </style>
+</head>
+<body>
+
+<div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 bg-white p-3 rounded card shadow-sm">
+        <div>
+            <h4 class="fw-bold mb-0 text-primary"><i class="bi bi-cpu-fill"></i> HỆ THỐNG GIÁM SÁT IOT</h4>
+            <small class="text-muted">Đại học Bách Khoa Hà Nội | Chế độ Mô phỏng (Offline)</small>
+        </div>
+        <span class="badge bg-success p-2">Đang chạy (Simulation)</span>
+    </div>
+
+    <div class="row g-3 mb-4 text-center">
+        <div class="col-md-3">
+            <div id="cardLux" class="card p-3 stat-card h-100">
+                <small class="fw-bold text-muted text-uppercase">Ánh sáng hiện tại</small>
+                <h2 id="luxValue" class="display-6 fw-bold text-primary my-2">--</h2>
+                <small class="text-muted">Đơn vị: Lux</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 border-start border-success border-5 h-100">
+                <small class="fw-bold text-muted text-uppercase">Trạng thái môi trường</small>
+                <h3 id="statusText" class="fw-bold text-success my-2">Đang đọc...</h3>
+                <small id="timeUpdate" class="text-muted">--</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 border-start border-danger border-5 h-100">
+                <small class="fw-bold text-muted text-uppercase">Cao nhất (Max)</small>
+                <h2 id="maxValue" class="display-6 fw-bold text-danger my-2">0</h2>
+                <small class="text-muted">Kỷ lục</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card p-3 border-start border-warning border-5 h-100">
+                <small class="fw-bold text-muted text-uppercase">Thấp nhất (Min)</small>
+                <h2 id="minValue" class="display-6 fw-bold text-warning my-2">1000</h2>
+                <small class="text-muted">Kỷ lục</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="card p-4 mb-4">
+        <h6 class="fw-bold mb-3"><i class="bi bi-sliders"></i> BẢNG ĐIỀU KHIỂN & TƯƠNG TÁC</h6>
+        <div class="row align-items-center">
+            <div class="col-md-3 mb-2">
+                <label class="form-label small fw-bold text-uppercase">Ngưỡng cảnh báo</label>
+                <input type="number" id="thresholdInput" class="form-control" value="600">
+            </div>
+            <div class="col-md-3 mb-2 text-center border-start border-end">
+                <label class="form-label small fw-bold d-block text-uppercase">Thiết bị (LED)</label>
+                <div id="ledIndicator" class="led-indicator mb-1"></div>
+                <div class="form-check form-switch d-flex justify-content-center">
+                    <input class="form-check-input" type="checkbox" id="ledSwitch" onchange="toggleLed()">
+                </div>
+            </div>
+            <div class="col-md-6 text-md-end">
+                <button id="btnPause" class="btn btn-primary btn-sm me-1" onclick="togglePause()"><i class="bi bi-pause-fill"></i> Tạm dừng</button>
+                <button class="btn btn-outline-danger btn-sm me-1" onclick="resetStats()"><i class="bi bi-arrow-counterclockwise"></i> Reset</button>
+                <button class="btn btn-outline-secondary btn-sm me-1" onclick="clearLog()"><i class="bi bi-trash"></i> Xóa Nhật ký</button>
+                <button class="btn btn-success btn-sm" onclick="exportCSV()"><i class="bi bi-file-earmark-spreadsheet"></i> Xuất Excel</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-7 mb-4">
+            <div class="card p-4 h-100">
+                <h6 class="fw-bold mb-3"><i class="bi bi-graph-up"></i> BIỂU ĐỒ THỜI GIAN THỰC</h6>
+                <canvas id="lightChart"></canvas>
+            </div>
+        </div>
+        <div class="col-lg-5 mb-4">
+            <div class="card p-4 h-100">
+                <h6 class="fw-bold mb-3"><i class="bi bi-table"></i> NHẬT KÝ DỮ LIỆU</h6>
+                <div class="log-container border shadow-sm">
+                    <table class="table table-sm table-hover mb-0 text-center">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Giờ</th>
+                                <th>Lux</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dataTableBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let isPaused = false;
+    let maxLux = 0;
+    let minLux = 1000;
+    let history = [];
+    let count = 0;
+
+    // Khởi tạo Chart.js
+    const ctx = document.getElementById('lightChart').getContext('2d');
+    const chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Cường độ sáng',
+                data: [],
+                borderColor: '#0d6efd',
+                backgroundColor: 'rgba(13, 110, 253, 0.1)',
+                fill: true,
+                tension: 0.3
+            }]
+        },
+        options: { responsive: true, plugins: { legend: { display: false } } }
+    });
+
+    // Các hàm điều khiển
+    function togglePause() {
+        isPaused = !isPaused;
+        document.getElementById('btnPause').innerHTML = isPaused ? '<i class="bi bi-play-fill"></i> Tiếp tục' : '<i class="bi bi-pause-fill"></i> Tạm dừng';
+    }
+
+    function resetStats() {
+        maxLux = 0; minLux = 1000;
+        document.getElementById('maxValue').innerText = "0";
+        document.getElementById('minValue').innerText = "1000";
+    }
+
+    function clearLog() {
+        if(confirm("Xóa toàn bộ nhật ký?")) {
+            count = 0; history = [];
+            document.getElementById('dataTableBody').innerHTML = "";
+        }
+    }
+
+    function toggleLed() {
+        const isChecked = document.getElementById('ledSwitch').checked;
+        document.getElementById('ledIndicator').className = isChecked ? 'led-indicator led-on' : 'led-indicator led-off';
+    }
+
+    function exportCSV() {
+        let csv = "\uFEFFSTT,Thoi Gian,Lux\n";
+        history.forEach((item, index) => csv += `${index+1},${item.time},${item.val}\n`);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = "Nhat_ky_IoT.csv";
+        link.click();
+    }
+
+    // VÒNG LẶP CẬP NHẬT (FAKE DATA)
+    setInterval(() => {
+        if (isPaused) return;
+
+        // TỰ ĐẺ RA SỐ NGẪU NHIÊN
+        const lux = Math.floor(Math.random() * 800) + 50;
+        const now = new Date().toLocaleTimeString();
+        count++;
+
+        // Kiểm tra ngưỡng
+        const threshold = document.getElementById('thresholdInput').value;
+        const cardLux = document.getElementById('cardLux');
+        if (lux > threshold) {
+            cardLux.classList.add("bg-danger", "text-white");
+            document.getElementById('luxValue').classList.replace("text-primary", "text-white");
+        } else {
+            cardLux.classList.remove("bg-danger", "text-white");
+            document.getElementById('luxValue').classList.replace("text-white", "text-primary");
+        }
+
+        // Max/Min
+        if (lux > maxLux) maxLux = lux;
+        if (lux < minLux) minLux = lux;
+
+        // Trạng thái
+        let status = "Ổn định"; let badge = "bg-success";
+        if (lux < 200) { status = "Tối"; badge = "bg-secondary"; }
+        else if (lux > 600) { status = "Rất sáng"; badge = "bg-danger"; }
+
+        // Update UI
+        document.getElementById('luxValue').innerText = lux;
+        document.getElementById('maxValue').innerText = maxLux;
+        document.getElementById('minValue').innerText = minLux;
+        document.getElementById('statusText').innerText = status;
+        document.getElementById('statusText').className = `fw-bold text-${badge.replace('bg-', '')} my-2`;
+        document.getElementById('timeUpdate').innerText = "Cập nhật: " + now;
+
+        // Update Chart
+        chart.data.labels.push(now);
+        chart.data.datasets[0].data.push(lux);
+        if (chart.data.labels.length > 15) {
+            chart.data.labels.shift();
+            chart.data.datasets[0].data.shift();
+        }
+        chart.update();
+
+        // Update Table
+        history.push({time: now, val: lux});
+        const row = `<tr><td>${count}</td><td>${now}</td><td class="fw-bold">${lux}</td><td><span class="badge ${badge}">${status}</span></td></tr>`;
+        document.getElementById('dataTableBody').insertAdjacentHTML('afterbegin', row);
+    }, 2000);
+</script>
+</body>
+</html>
