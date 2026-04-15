@@ -1,97 +1,74 @@
-from fastapi import FastAPI, Depends
+import psycopg2
+from fastapi import FastAPI
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, Float, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from datetime import datetime
-# [MỚI] Thêm thư viện để cấp phép cho trình duyệt truy cập API
+# [PHẦN THÊM MỚI] - Thư viện để cấp phép cho trình duyệt truy cập
 from fastapi.middleware.cors import CORSMiddleware 
 
-# =====================================================================
-# 1. CẤU HÌNH KẾT NỐI POSTGRESQL (GIỮ NGUYÊN)
-# =====================================================================
-DATABASE_URL = "postgresql://postgres:hqqbg1234@127.0.0.1:5432/duaniot"
+app = FastAPI()
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# =====================================================================
-# 2. ĐỊNH NGHĨA BẢNG TRONG DATABASE (GIỮ NGUYÊN)
-# =====================================================================
-class SensorRecord(Base):
-    __tablename__ = "sensor_data"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    lux = Column(Float, nullable=False)                
-    button = Column(Integer, nullable=False)           
-    timestamp = Column(DateTime, default=datetime.now)
-
-Base.metadata.create_all(bind=engine)
-
-# =====================================================================
-# 3. KHỞI TẠO FASTAPI VÀ CẤU TRÚC JSON
-# =====================================================================
-app = FastAPI(title="IOT Server - PostgreSQL")
-
-# [MỚI] CẤU HÌNH CORS: Cho phép trang Web (Frontend) gọi vào Server này
-# Nếu không có đoạn này, trình duyệt sẽ chặn không cho Web lấy dữ liệu
+# [PHẦN THÊM MỚI] - Cấu hình CORS
+# Giúp file Web (Live Server) có thể gọi được vào Server (Uvicorn)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Cho phép tất cả các địa chỉ (bao gồm Live Server của Tài)
+    allow_origins=["*"], 
     allow_credentials=True,
-    allow_methods=["*"], # Cho phép GET, POST, v.v.
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Thông tin kết nối (Giữ nguyên của bạn cùng nhóm)
+DB_CONFIG = {
+    "dbname": "duaniot",
+    "user": "postgres",
+    "password": "hqqbg1234",
+    "host": "127.0.0.1"
+}
+
 class SensorData(BaseModel):
     lux: float
-    button: int
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
 # =====================================================================
-# 4. CÁC CỔNG DỮ LIỆU (API ENDPOINTS)
+# CỔNG NHẬN DỮ LIỆU TỪ ESP32 (GIỮ NGUYÊN CỦA BẠN CÙNG NHÓM)
 # =====================================================================
-
-# --- CỔNG 1: NHẬN DỮ LIỆU TỪ ESP32 (GIỮ NGUYÊN) ---
 @app.post("/api/data")
-async def receive_data(data: SensorData, db: Session = Depends(get_db)):
-    new_record = SensorRecord(
-        lux=data.lux,
-        button=data.button,
-        timestamp=datetime.now()
-    )
+async def save_data(data: SensorData):
+    # 1. Kết nối vào DB đã có sẵn
+    conn = psycopg2.connect(**DB_CONFIG)
+    cursor = conn.cursor()
     
-    db.add(new_record)
-    db.commit()
-    db.refresh(new_record)
+    # 2. Chỉ thực hiện lệnh INSERT vào bảng đã tạo thủ công
+    insert_query = "INSERT INTO sensor_data (lux) VALUES (%s)"
+    cursor.execute(insert_query, (data.lux,))
     
-    print("=" * 40)
-    print(f" ĐÃ LƯU VÀO DATABASE THÀNH CÔNG:")
-    print(f" -> Độ rọi  : {data.lux} Lux")
-    print(f" -> Nút nhấn: {data.button}")
-    print(f" -> ID bản ghi: {new_record.id}")
-    print("=" * 40)
+    # 3. Chốt dữ liệu và đóng kết nối
+    conn.commit()
+    cursor.close()
+    conn.close()
     
-    return {"status": "success", "message": "Đã lưu vào PostgreSQL"}
+    return {"message": "Đã lưu thành công!"}
 
-# --- [MỚI] CỔNG 2: XUẤT DỮ LIỆU CHO TRANG WEB (API GET) ---
+# =====================================================================
+# [PHẦN THÊM MỚI] - CỔNG XUẤT DỮ LIỆU CHO WEB (API GET)
+# =====================================================================
 @app.get("/api/data")
-async def get_sensor_data(db: Session = Depends(get_db)):
-    # Lấy 30 bản ghi mới nhất từ Database, sắp xếp ID từ lớn đến bé
-    records = db.query(SensorRecord).order_by(SensorRecord.id.desc()).limit(30).all()
+async def get_data():
+    # 1. Kết nối vào DB
+    conn = psycopg2.connect(**DB_CONFIG)
+    cursor = conn.cursor()
     
-    # Trả về danh sách đã được định dạng để Web dễ đọc
+    # 2. Lấy 30 bản ghi mới nhất
+    # Lưu ý: Tài hãy bảo bạn cùng nhóm đảm bảo bảng 'sensor_data' có cột thời gian (ví dụ: created_at)
+    query = "SELECT lux, created_at FROM sensor_data ORDER BY id DESC LIMIT 30"
+    cursor.execute(query)
+    records = cursor.fetchall()
+    
+    cursor.close()
+    conn.close()
+    
+    # 3. Định dạng lại dữ liệu để gửi cho file Web
     return [
         {
-            "id": r.id,
-            "lux": r.lux,
-            "button": r.button,
-            "timestamp": r.timestamp.strftime("%H:%M:%S") # Định dạng lại thời gian cho đẹp
+            "lux": r[0], 
+            "timestamp": r[1].strftime("%H:%M:%S") if r[1] else "N/A"
         } for r in records
     ]
