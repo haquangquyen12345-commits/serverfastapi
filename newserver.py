@@ -1,13 +1,12 @@
 import psycopg2
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-# [PHẦN THÊM MỚI] - Thư viện để cấp phép cho trình duyệt truy cập
-from fastapi.middleware.cors import CORSMiddleware 
+from fastapi.middleware.cors import CORSMiddleware
+from datetime import datetime
 
-app = FastAPI()
+app = FastAPI(title="Smart Home API")
 
-# [PHẦN THÊM MỚI] - Cấu hình CORS
-# Giúp file Web (Live Server) có thể gọi được vào Server (Uvicorn)
+# Mở cửa CORS cho Live Server (Giữ nguyên của Tài)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -16,7 +15,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Thông tin kết nối (Giữ nguyên của bạn cùng nhóm)
 DB_CONFIG = {
     "dbname": "duaniot",
     "user": "postgres",
@@ -27,48 +25,56 @@ DB_CONFIG = {
 class SensorData(BaseModel):
     lux: float
 
-# =====================================================================
-# CỔNG NHẬN DỮ LIỆU TỪ ESP32 (GIỮ NGUYÊN CỦA BẠN CÙNG NHÓM)
-# =====================================================================
+# =========================================================
+# CỔNG 1: NHẬN DỮ LIỆU TỪ ESP32 (Đã ghép thêm Cảnh báo của bạn)
+# =========================================================
 @app.post("/api/data")
 async def save_data(data: SensorData):
-    # 1. Kết nối vào DB đã có sẵn
     conn = psycopg2.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
-    # 2. Chỉ thực hiện lệnh INSERT vào bảng đã tạo thủ công
-    insert_query = "INSERT INTO sensor_data (lux) VALUES (%s)"
-    cursor.execute(insert_query, (data.lux,))
-    
-    # 3. Chốt dữ liệu và đóng kết nối
-    conn.commit()
-    cursor.close()
-    conn.close()
-    
-    return {"message": "Đã lưu thành công!"}
+    try:
+        # 1. Lưu số liệu
+        insert_query = "INSERT INTO sensor_data (lux, timestamp) VALUES (%s, %s)"
+        cursor.execute(insert_query, (data.lux, datetime.now()))
+        
+        # 2. Kiểm tra ngưỡng (Logic của Quyền)
+        if data.lux > 100.0:
+            insert_alarm_query = "INSERT INTO alarms (alert_type, is_resolved) VALUES (%s, %s)"
+            cursor.execute(insert_alarm_query, (f"Quá sáng: {data.lux} Lux", False))
+            
+        conn.commit()
+        return {"message": "Đã lưu thành công!"}
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
 
-# =====================================================================
-# [PHẦN THÊM MỚI] - CỔNG XUẤT DỮ LIỆU CHO WEB (API GET)
-# =====================================================================
+# =========================================================
+# CỔNG 2: XUẤT 30 DỮ LIỆU CHO WEB VẼ BIỂU ĐỒ (Của Tài - Đã sửa lỗi tên cột)
+# =========================================================
 @app.get("/api/data")
 async def get_data():
-    # 1. Kết nối vào DB
     conn = psycopg2.connect(**DB_CONFIG)
     cursor = conn.cursor()
     
-    # 2. Lấy 30 bản ghi mới nhất
-    # Lưu ý: Tài hãy bảo bạn cùng nhóm đảm bảo bảng 'sensor_data' có cột thời gian (ví dụ: created_at)
-    query = "SELECT lux, created_at FROM sensor_data ORDER BY id DESC LIMIT 30"
+    # ĐÃ SỬA: Dùng cột 'timestamp' cho khớp với Database của Quyền
+    query = "SELECT lux, timestamp FROM sensor_data ORDER BY id DESC LIMIT 30"
     cursor.execute(query)
     records = cursor.fetchall()
     
     cursor.close()
     conn.close()
     
-    # 3. Định dạng lại dữ liệu để gửi cho file Web
-    return [
+    # Định dạng lại dữ liệu
+    # Dùng [::-1] để đảo ngược list (để trên biểu đồ, điểm cũ nằm bên trái, điểm mới nằm bên phải)
+    formatted_data = [
         {
             "lux": r[0], 
-            "timestamp": r[1].strftime("%H:%M:%S") if r[1] else "N/A"
+            "timestamp": r[1].strftime("%d/%m %H:%M:%S") if r[1] else "N/A" 
         } for r in records
-    ]
+    ][::-1] 
+    
+    return formatted_data
