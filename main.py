@@ -1,70 +1,33 @@
+import psycopg2
 from fastapi import FastAPI, Depends
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, Float, DateTime
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
-from datetime import datetime
 
-# =====================================================================
-# 1. CẤU HÌNH KẾT NỐI POSTGRESQL 
-# =====================================================================
-# Cấu trúc: postgresql://[user]:[password]@[host]:[port]/[database_name]
-DATABASE_URL = "postgresql://postgres:hqqbg1234@127.0.0.1:5432/duaniot"
+app = FastAPI()
 
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# Thông tin kết nối
+DB_CONFIG = {
+    "dbname": "duaniot",
+    "user": "postgres",
+    "password": "hqqbg1234",
+    "host": "127.0.0.1"
+}
 
-# =====================================================================
-# 2. ĐỊNH NGHĨA BẢNG TRONG DATABASE (SQLAlchemy Model)
-# =====================================================================
-# thiết kế các cột trong cuốn sổ cái
-class SensorRecord(Base):
-    __tablename__ = "sensor_data" # Tên bảng
-    
-    id = Column(Integer, primary_key=True, index=True) # Cột số thứ tự (tự tăng)
-    lux = Column(Float, nullable=False)                # Cột độ rọi
-    button = Column(Integer, nullable=False)           # Cột trạng thái nút
-    timestamp = Column(DateTime, default=datetime.now) # Cột thời gian
-
-# tự động chạy vào PostgreSQL và tạo cái bảng trên nếu nó chưa tồn tại
-Base.metadata.create_all(bind=engine)
-# 3. KHỞI TẠO FASTAPI VÀ CẤU TRÚC JSON
-app = FastAPI(title="IOT Server - PostgreSQL")
-
-# định dạng gói hàng mà ESP32 bắt buộc phải tuân thủ khi gửi lên
 class SensorData(BaseModel):
     lux: float
-    button: int
 
-# Hàm hỗ trợ: Mở kết nối Database khi có khách gọi, xong việc thì tự đóng lại
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-# 4. MỞ CỔNG ĐÓN DỮ LIỆU (API Endpoint)
 @app.post("/api/data")
-async def receive_data(data: SensorData, db: Session = Depends(get_db)):
-    # Bóc gói hàng JSON và chuyển thành một dòng dữ liệu (Record) chuẩn bị lưu
-    new_record = SensorRecord(
-        lux=data.lux,
-        button=data.button,
-        timestamp=datetime.now()
-    )
+async def save_data(data: SensorData):
+    # 1. Kết nối vào DB đã có sẵn
+    conn = psycopg2.connect(**DB_CONFIG)
+    cursor = conn.cursor()
     
-    # Ra lệnh cất vào kho và chốt sổ (commit)
-    db.add(new_record)
-    db.commit()
-    db.refresh(new_record)
+    # 2. Chỉ thực hiện lệnh INSERT vào bảng đã tạo thủ công
+    insert_query = "INSERT INTO sensor_data (lux) VALUES (%s)"
+    cursor.execute(insert_query, (data.lux,))
     
-    # In ra Terminal để theo dõi
-    print("=" * 40)
-    print(f" ĐÃ LƯU VÀO DATABASE THÀNH CÔNG:")
-    print(f" -> Độ rọi  : {data.lux} Lux")
-    print(f" -> Nút nhấn: {data.button}")
-    print(f" -> ID bản ghi: {new_record.id}")
-    print("=" * 40)
+    # 3. Chốt dữ liệu và đóng kết nối
+    conn.commit()
+    cursor.close()
+    conn.close()
     
-    return {"status": "success", "message": "Đã lưu vào PostgreSQL"}
+    return {"message": "Đã lưu thành công!"}
