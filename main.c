@@ -20,43 +20,43 @@ void bh1750_task(void *pvParameters) {
     vTaskDelay(pdMS_TO_TICKS(10000)); 
 
     while (1) {
-        // Đọc cường độ sáng từ cảm biến
+        // Đọc cảm biến bình thường
         float lux = bh1750_read_lux();
         
-        // Kiểm tra xem cảm biến có phản hồi không (thường thư viện sẽ trả về số âm nếu lỗi)
         if (lux < 0) {
             ESP_LOGE(TAG, "Khong doc duoc cam bien, Vui long kiem tra lai day cam I2C.");
         } else {
             ESP_LOGI(TAG, "Cuong do anh sang: %.2f Lux", lux);
 
-            // Đóng gói JSON
-            char post_data[100];
-            sprintf(post_data, "{\"lux\": %.2f}", lux);
+            // BƯỚC KIỂM TRA MẠNG CHỐNG CRASH HỆ THỐNG
+            if (!is_wifi_connected) {
+                ESP_LOGW(TAG, "Khong co WiFi. Tam ngung day du lieu len Server...");
+            } 
+            else {
+                // CHỈ THỰC HIỆN HTTP POST KHI CÓ MẠNG
+                char post_data[100];
+                sprintf(post_data, "{\"lux\": %.2f}", lux);
 
-            // 
-            esp_http_client_config_t config = {
-                .url = SERVER_URL,
-                .method = HTTP_METHOD_POST,
-                .timeout_ms = 5000, // Chờ server phản hồi tối đa 5s
-            };
-            esp_http_client_handle_t client = esp_http_client_init(&config);
+                esp_http_client_config_t config = {
+                    .url = SERVER_URL,
+                    .method = HTTP_METHOD_POST,
+                    .timeout_ms = 5000, 
+                };
+                esp_http_client_handle_t client = esp_http_client_init(&config);
 
-            esp_http_client_set_header(client, "Content-Type", "application/json");
-            esp_http_client_set_post_field(client, post_data, strlen(post_data));
+                esp_http_client_set_header(client, "Content-Type", "application/json");
+                esp_http_client_set_post_field(client, post_data, strlen(post_data));
 
-            //
-            esp_err_t err = esp_http_client_perform(client);
-            if (err == ESP_OK) {
-                ESP_LOGI(TAG, " Da gui len Server, HTTP Status: %d", esp_http_client_get_status_code(client));
-            } else {
-                ESP_LOGE(TAG, " Loi ket noi den Server: %s", esp_err_to_name(err));
+                esp_err_t err = esp_http_client_perform(client);
+                if (err == ESP_OK) {
+                    ESP_LOGI(TAG, " Da gui len Server, HTTP Status: %d", esp_http_client_get_status_code(client));
+                } else {
+                    ESP_LOGE(TAG, " Loi ket noi den Server: %s", esp_err_to_name(err));
+                }
+                esp_http_client_cleanup(client);
             }
-
-            // Dọn dẹp bộ nhớ sau mỗi lần gửi để tránh tràn RAM
-            esp_http_client_cleanup(client);
         }
 
-        //  Nghỉ 5 giây rồi mới đo tiếp (Tránh làm nóng cảm biến và nghẽn mạng)
         vTaskDelay(pdMS_TO_TICKS(5000)); 
     }
 }
