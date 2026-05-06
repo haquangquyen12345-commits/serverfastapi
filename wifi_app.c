@@ -11,32 +11,34 @@
 static const char *TAG = "WIFI_APP";
 static int s_retry_num = 0;
 
-// HÀM LẮNG NGHE SỰ KIỆN (EVENT HANDLER)
+// Thêm biến cờ toàn cục ở đầu file (dưới các thư viện)
+bool is_wifi_connected = false;
+
+// HÀM LẮNG NGHE SỰ KIỆN NÂNG CẤP
 static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
-        // WiFi vừa được bật -> Ra lệnh kết nối ngay
         esp_wifi_connect();
     } 
     else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-        //Bị rớt mạng hoặc sai mật khẩu
-        if (s_retry_num < MAXIMUM_RETRY) {
-            esp_wifi_connect(); // Thử kết nối lại
-            s_retry_num++;
-            ESP_LOGW(TAG, "Dang thu ket noi lai lan thu %d...", s_retry_num);
-        } else {
-            ESP_LOGE(TAG, "Khong the ket noi den WiFi. Vui long kiem tra lai!");
-        }
+        // Sự kiện: Bị rớt mạng, mất sóng, khởi động lại cục Router
+        is_wifi_connected = false; // Hạ cờ báo hiệu mất mạng
+        
+        ESP_LOGW(TAG, "Bi mat ket noi WiFi! ESP32 dang tu dong thu lai...");
+        
+        // Cố tình delay 2 giây để tránh bị spam liên tục gây treo chip
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        esp_wifi_connect(); // Ra lệnh thử kết nối lại vô hạn, bỏ luôn s_retry_num
     } 
     else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
-        // Sự kiện: Đã nhận được địa chỉ IP từ Router
         ip_event_got_ip_t* event = (ip_event_got_ip_t*) event_data;
+        is_wifi_connected = true; // Dựng cờ báo hiệu có mạng
+
         ESP_LOGI(TAG, "             KET NOI THANH CONG!               ");
-        ESP_LOGI(TAG, "- Ten mang (SSID): %s", WIFI_SSID);
         ESP_LOGI(TAG, "- Dia chi IPv4   : " IPSTR, IP2STR(&event->ip_info.ip));
+        ESP_LOGI(TAG, "===============================================\n");
         ESP_LOGI(TAG, "- Subnet Mask    : " IPSTR, IP2STR(&event->ip_info.netmask));
         ESP_LOGI(TAG, "- Default Gateway: " IPSTR, IP2STR(&event->ip_info.gw));
         ESP_LOGI(TAG, "===============================================\n");
-        s_retry_num = 0;
     }
 }
 
