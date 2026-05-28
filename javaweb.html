@@ -62,22 +62,32 @@
     <div class="card p-4 mb-4 border-top border-primary border-4 shadow-sm">
         <h6 class="fw-bold mb-3"><i class="bi bi-search"></i> TRUY XUẤT & BỘ LỌC DATABASE</h6>
         <div class="row g-3">
-            <div class="col-md-5">
+            <div class="col-md-4">
                 <div class="input-group">
-                    <span class="input-group-text bg-primary text-white">Tìm Lux =</span>
-                    <input type="number" id="inSearch" class="form-control" placeholder="Ví dụ: 50">
-                    <button class="btn btn-primary" onclick="handleSearch()">Tìm kiếm</button>
+                    <span class="input-group-text bg-primary text-white">=</span>
+                    <input type="number" id="inSearch" class="form-control" placeholder="Tìm bằng">
+                    <button class="btn btn-primary" onclick="handleSearch()">Tìm</button>
                 </div>
             </div>
-            <div class="col-md-5">
+            
+            <div class="col-md-4">
                 <div class="input-group">
-                    <span class="input-group-text bg-warning">Lọc Lux <</span>
-                    <input type="number" id="inFilter" class="form-control" placeholder="Ví dụ: 200">
-                    <button class="btn btn-warning" onclick="handleFilter()">Lọc dữ liệu</button>
+                    <span class="input-group-text bg-warning text-dark"><</span>
+                    <input type="number" id="inFilterLess" class="form-control" placeholder="Tìm nhỏ hơn">
+                    <button class="btn btn-warning text-dark" onclick="handleFilterLess()">Lọc</button>
                 </div>
             </div>
-            <div class="col-md-2">
-                <button class="btn btn-outline-secondary w-100" onclick="clearResults()">Đóng</button>
+
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text bg-danger text-white">></span>
+                    <input type="number" id="inFilterGreater" class="form-control" placeholder="Tìm lớn hơn">
+                    <button class="btn btn-danger" onclick="handleFilterGreater()">Lọc</button>
+                </div>
+            </div>
+            
+            <div class="col-12 text-end">
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearResults()">Đóng bảng kết quả</button>
             </div>
         </div>
 
@@ -110,8 +120,21 @@
                         <tbody id="tableBody"></tbody>
                     </table>
                 </div>
-                <div class="mt-3 text-end">
-                    <button class="btn btn-sm btn-success" onclick="exportCSV()">Xuất CSV</button>
+                <div class="mt-3 border-top pt-3">
+                    <h6 class="fw-bold text-success mb-2"><i class="bi bi-file-earmark-excel"></i> XUẤT CSV THEO THỜI GIAN</h6>
+                    <div class="row g-2 align-items-center">
+                        <div class="col-md-5">
+                            <small class="text-muted">Từ giờ:</small>
+                            <input type="datetime-local" id="startTime" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-5">
+                            <small class="text-muted">Đến giờ:</small>
+                            <input type="datetime-local" id="endTime" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2 mt-4 text-end">
+                            <button class="btn btn-sm btn-success w-100" onclick="exportCustomCSV()">Tải</button>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -119,16 +142,42 @@
 </div>
 
 <script>
-    const API_BASE = "http://127.0.0.1:8000/api";
+    const API_BASE = "http://10.84.145.166:8000/api";
     let history = [];
     let maxLux = 0; let minLux = 1000; let stt = 0;
 
     // Chart.js init
+   // Chart.js init - Phiên bản tối ưu hóa hiển thị dữ liệu lớn
     const ctx = document.getElementById('luxChart').getContext('2d');
     const chart = new Chart(ctx, {
         type: 'line',
-        data: { labels: [], datasets: [{ label: 'Lux', data: [], borderColor: '#0d6efd', tension: 0.4, fill: true, backgroundColor: 'rgba(13,110,253,0.1)' }] },
-        options: { responsive: true, plugins: { legend: { display: false } } }
+        data: { 
+            labels: [], 
+            datasets: [{ 
+                label: 'Lux', 
+                data: [], 
+                borderColor: '#0d6efd', 
+                tension: 0.4, 
+                fill: true, 
+                backgroundColor: 'rgba(13,110,253,0.1)',
+                pointRadius: 2 // Thu nhỏ chấm tròn trên đường biểu đồ cho đỡ rối mắt
+            }] 
+        },
+        options: { 
+            responsive: true, 
+            plugins: { 
+                legend: { display: false } 
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        autoSkip: true,
+                        maxTicksLimit: 10, // Dù có nhiều điểm, trục X cũng chỉ hiện tối đa 10 mốc thời gian
+                        maxRotation: 0     // Chữ hiển thị ngang, không bị nằm nghiêng
+                    }
+                }
+            }
+        }
     });
 
     async function updateDashboard() {
@@ -149,7 +198,16 @@
             document.getElementById('connStatus').innerText = "Máy chủ: OK";
             document.getElementById('luxVal').innerText = lux;
             document.getElementById('lastUpdate').innerText = "Cập nhật: " + time;
-
+// === THÊM ĐOẠN LOGIC TRẠNG THÁI NÀY VÀO ===
+    const statusEl = document.getElementById('statusVal');
+    if (lux > 400) {
+        statusEl.innerText = "Quá sáng";
+        statusEl.className = "h2 fw-bold text-danger my-2"; // Đổi sang màu đỏ
+    } else {
+        statusEl.innerText = "Bình thường";
+        statusEl.className = "h2 fw-bold text-success my-2"; // Đổi sang màu xanh
+    }
+    // ==========================================
             // Max/Min
             if (lux > maxLux) maxLux = lux; if (lux < minLux) minLux = lux;
             document.getElementById('maxVal').innerText = maxLux;
@@ -158,7 +216,6 @@
             // Chart update
             chart.data.labels.push(time);
             chart.data.datasets[0].data.push(lux);
-            if (chart.data.labels.length > 15) { chart.data.labels.shift(); chart.data.datasets[0].data.shift(); }
             chart.update('none');
 
             // Table update
@@ -174,16 +231,30 @@
     }
 
     // Filter Functions
+    // 1. Hàm tìm chính xác
     async function handleSearch() {
         const lux = document.getElementById('inSearch').value;
+        if (!lux) return;
         const res = await fetch(`${API_BASE}/search?lux=${lux}`);
         const data = await res.json();
         renderSearch(data);
     }
 
-    async function handleFilter() {
-        const max = document.getElementById('inFilter').value;
+    // 2. Hàm lọc NHỎ HƠN (<)
+    async function handleFilterLess() {
+        const max = document.getElementById('inFilterLess').value;
+        if (!max) return;
         const res = await fetch(`${API_BASE}/filter?max_lux=${max}`);
+        const data = await res.json();
+        renderSearch(data);
+    }
+
+    // 3. Hàm lọc LỚN HƠN (>) - MỚI THÊM
+    async function handleFilterGreater() {
+        const min = document.getElementById('inFilterGreater').value;
+        if (!min) return;
+        // Gọi đến API mới mà ta sẽ viết ở Backend
+        const res = await fetch(`${API_BASE}/filter_greater?min_lux=${min}`);
         const data = await res.json();
         renderSearch(data);
     }
@@ -201,13 +272,53 @@
 
     function clearResults() { document.getElementById('resArea').classList.add('d-none'); }
 
-    function exportCSV() {
-        let csv = "STT,Thoi Gian,Lux\n";
-        history.forEach((h, i) => csv += `${i+1},${h.time},${h.val}\n`);
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'nhat_ky_iot.csv'; a.click();
+    async function exportCustomCSV() {
+        // Lấy giá trị từ 2 ô nhập liệu
+        const start = document.getElementById('startTime').value;
+        const end = document.getElementById('endTime').value;
+
+        // Bắt lỗi nếu người dùng chưa chọn ngày
+        if (!start || !end) {
+            alert("Vui lòng chọn đầy đủ thời gian bắt đầu và kết thúc!");
+            return;
+        }
+        if (new Date(start) > new Date(end)) {
+            alert("Thời gian bắt đầu không được lớn hơn thời gian kết thúc!");
+            return;
+        }
+
+        try {
+            // Chỉnh lại format chuỗi thời gian để gửi cho Python (thay chữ T bằng dấu cách)
+            const startStr = start.replace('T', ' ') + ':00';
+            const endStr = end.replace('T', ' ') + ':59';
+            
+            // Gọi Server yêu cầu xuất dữ liệu
+            const res = await fetch(`${API_BASE}/export?start_time=${startStr}&end_time=${endStr}`);
+            const data = await res.json();
+
+            if (data.length === 0) {
+                alert("Không có dữ liệu nào được ghi nhận trong khoảng thời gian này!");
+                return;
+            }
+
+            // Chuyển mảng dữ liệu thành định dạng text của file CSV
+            let csv = "STT,Thoi Gian,Lux\n";
+            data.forEach((item, index) => {
+                csv += `${index + 1},${item.timestamp},${item.lux}\n`;
+            });
+
+            // Gói file và tự động tải xuống máy tính
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url; 
+            // Đặt tên file có chứa thời gian để dễ quản lý
+            a.download = `Data_Lux_${start.replace('T','_')}.csv`; 
+            a.click();
+            
+        } catch (error) {
+            alert("Lỗi khi tải dữ liệu từ máy chủ. Vui lòng kiểm tra lại mạng!");
+        }
     }
 
     setInterval(updateDashboard, 2000);
